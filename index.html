@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Cine Galions</title>
+  <meta name="description" content="Tu bóveda personal de películas, series y anime: lleva lo que ves, guarda por qué te gustó, recibe recomendaciones y sigue los próximos episodios.">
+  <meta name="theme-color" content="#07080c">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Galions">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/img/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="assets/img/icon-180.png">
+  <link rel="preconnect" href="https://api.themoviedb.org">
+  <link rel="preconnect" href="https://image.tmdb.org">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+  <div class="ambient"></div>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Menú principal"></aside>
+    <div class="main">
+      <header class="topbar" id="topbar"></header>
+      <main id="view" tabindex="-1"></main>
+    </div>
+    <nav class="tabbar" id="tabbar" aria-label="Menú"></nav>
+  </div>
+  <div id="drawer-root"></div>
+  <div id="modal-root"></div>
+  <div id="toasts" aria-live="polite"></div>
+  <noscript><p style="padding:24px">Cine Galions necesita JavaScript activado.</p></noscript>
+  <script type="module" src="assets/js/app.js"></script>
+</body>
+</html>
