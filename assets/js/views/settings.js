@@ -1,7 +1,8 @@
 import { icon } from '../icons.js';
 import { validateKey, DEFAULT_FEEDS } from '../api.js';
-import { settings, library, notifs, meta } from '../store.js';
-import { esc, toast, openModal, closeModal } from '../ui.js';
+import { settings, library, notifs, meta, bus } from '../store.js';
+import { checkToken, syncNow, syncState, disconnectSync } from '../sync.js';
+import { esc, toast, openModal, closeModal, timeAgo } from '../ui.js';
 
 const REGIONS = { MX: '🇲🇽 México', US: '🇺🇸 Estados Unidos', ES: '🇪🇸 España', CO: '🇨🇴 Colombia', AR: '🇦🇷 Argentina', CL: '🇨🇱 Chile', PE: '🇵🇪 Perú', EC: '🇪🇨 Ecuador', VE: '🇻🇪 Venezuela', DO: '🇩🇴 República Dominicana' };
 const CATS = { cine: 'Cine', series: 'Series', anime: 'Anime' };
@@ -24,16 +25,21 @@ export default function settingsView(el, ctx) {
       <p class="form-msg ${s.tmdbKey ? 'ok' : ''}" id="st-key-msg">${s.tmdbKey ? `Conectada (${esc(maskKey(s.tmdbKey))})` : ''}</p>
     </section>
 
+    <section class="setting" id="st-sync">
+      <h3>${icon('cloud')} Sincronizar PC y teléfono</h3>
+      <div id="st-sync-body"></div>
+    </section>
+
     <section class="setting">
       <h3>${icon('qr')} Usarla en el teléfono (u otro equipo)</h3>
-      <p>Escanea este código con la cámara del teléfono: se abre la app ya conectada, sin tener que escribir la llave. Tus listas se pasan con la copia de seguridad de abajo.</p>
+      <p>Escanea este código con la cámara del teléfono: se abre la app ya conectada, sin escribir nada.${s.gistToken ? ' Como tienes la sincronización activada, el teléfono también queda vinculado a tus listas.' : ' Si activas la sincronización (arriba), el QR también vincula tus listas.'}</p>
       <button class="btn" id="st-qr">${icon('qr')} Mostrar código QR</button>
       <div id="st-qr-box"></div>
     </section>
 
     <section class="setting">
       <h3>${icon('download')} Copia de seguridad</h3>
-      <p>Tus listas viven en este navegador (${total} título${total === 1 ? '' : 's'}). Descarga una copia de vez en cuando, o úsala para pasar tus listas de la PC al teléfono.</p>
+      <p>Tienes ${total} título${total === 1 ? '' : 's'} guardados. Además de la sincronización, puedes descargar una copia en un archivo por si acaso.</p>
       <div class="setting-row">
         <button class="btn" id="st-export">${icon('download')} Descargar copia</button>
         <label class="btn" style="position:relative">${icon('upload')} Cargar copia<input type="file" id="st-import" accept="application/json,.json" style="position:absolute;inset:0;opacity:0;cursor:pointer"></label>
@@ -127,7 +133,8 @@ export default function settingsView(el, ctx) {
       box.innerHTML = '<p class="form-msg err">Primero guarda tu llave.</p>';
       return;
     }
-    const url = `${location.origin}${location.pathname}#/conectar?k=${encodeURIComponent(key)}`;
+    const g = settings.get().gistToken;
+    const url = `${location.origin}${location.pathname}#/conectar?k=${encodeURIComponent(key)}${g ? `&g=${encodeURIComponent(g)}` : ''}`;
     box.innerHTML = '<div class="load-more"><span class="spinner"></span></div>';
     let svg = '';
     try {
@@ -141,10 +148,81 @@ export default function settingsView(el, ctx) {
       <div style="flex:1;min-width:220px">
         <p style="color:var(--muted);font-size:14px">${svg ? 'Apunta la cámara del teléfono aquí.' : 'No se pudo generar el QR.'} También puedes copiar el enlace y mandártelo:</p>
         <button class="btn btn-sm" id="st-copy" style="margin-top:10px">${icon('copy')} Copiar enlace</button>
-        <p class="warn" style="margin-top:10px">Este código lleva tu llave: no lo compartas con nadie.</p>
+        <p class="warn" style="margin-top:10px">Este código lleva tus llaves: no lo compartas con nadie.</p>
       </div></div>`;
     $('#st-copy').onclick = () => navigator.clipboard?.writeText(url).then(() => toast('Enlace copiado', { ic: 'copy' }), () => prompt('Copia el enlace:', url));
   };
+
+  /* Sincronización */
+  const paintSync = () => {
+    const box = $('#st-sync-body');
+    if (!box) return;
+    const st = settings.get();
+    const state = syncState();
+    if (st.gistToken) {
+      box.innerHTML = `
+        <p>Activada. Lo que marques aquí aparece en tus otros dispositivos (y al revés) en segundos. Se guarda en un gist secreto de tu GitHub${st.gistId ? ` (<a href="https://gist.github.com/${esc(st.gistId)}" target="_blank" rel="noopener" style="color:var(--gold-2)">ver</a>)` : ''}.</p>
+        <p class="form-msg ${state.error ? 'err' : 'ok'}" id="st-sync-msg">${state.error ? `Último intento falló: ${esc(state.error)}` : state.at ? `Sincronizado ${timeAgo(state.at)}` : 'Preparando…'}</p>
+        <div class="setting-row" style="margin-top:10px">
+          <button class="btn btn-primary" id="st-sync-now">${icon('refresh')} Sincronizar ahora</button>
+          <button class="btn btn-ghost" id="st-sync-off">${icon('cloudOff')} Desconectar</button>
+        </div>
+        <p style="color:var(--dim);font-size:13px;margin-top:12px">En el teléfono: escanea el QR de abajo y queda vinculado solo. O pega el mismo token en Ajustes del teléfono.</p>`;
+      $('#st-sync-now').onclick = async (e) => {
+        const b = e.currentTarget;
+        b.disabled = true;
+        try {
+          const r = await syncNow();
+          toast(r?.pulled ? 'Traje los cambios de tu otro dispositivo' : 'Todo sincronizado', { ic: 'cloud', tone: 'violet' });
+        } catch (err) {
+          toast(err.message, { ic: 'cloudOff', tone: 'err' });
+        }
+        paintSync();
+      };
+      $('#st-sync-off').onclick = () => {
+        disconnectSync();
+        toast('Sincronización desconectada en este dispositivo', { ic: 'cloudOff' });
+        paintSync();
+      };
+      return;
+    }
+    box.innerHTML = `
+      <p>Para que lo que guardes en la PC aparezca en el teléfono y al revés. Usa tu cuenta de GitHub (gratis): tus listas se guardan en un archivo secreto («gist») que solo tú puedes editar. Solo hay que hacerlo una vez:</p>
+      <ol class="steps" style="margin:12px 0 16px">
+        <li><span>Abre <a href="https://github.com/settings/tokens/new?scopes=gist&description=Cine%20Galions" target="_blank" rel="noopener">este enlace de GitHub</a> (ya viene preparado).</span></li>
+        <li><span>En <b>Expiration</b> elige <b>No expiration</b>. Deja marcada solo la casilla <b>gist</b>.</span></li>
+        <li><span>Baja y toca <b>Generate token</b>. Copia el código que empieza por <b>ghp_</b> (solo se muestra una vez).</span></li>
+        <li><span>Pégalo aquí y toca <b>Conectar</b>.</span></li>
+      </ol>
+      <div class="key-form">
+        <input class="input" id="st-gh" placeholder="ghp_…" autocomplete="off" spellcheck="false">
+        <button class="btn btn-primary" id="st-gh-save">${icon('link')} Conectar</button>
+      </div>
+      <p class="form-msg" id="st-sync-msg"></p>`;
+    $('#st-gh-save').onclick = async () => {
+      const tok = $('#st-gh').value.trim();
+      const msg = $('#st-sync-msg');
+      if (!tok) return;
+      msg.className = 'form-msg';
+      msg.innerHTML = '<span class="spinner" style="display:inline-block;vertical-align:middle"></span> Comprobando con GitHub…';
+      try {
+        const login = await checkToken(tok);
+        settings.set({ gistToken: tok, gistId: '' });
+        msg.className = 'form-msg ok';
+        msg.textContent = `Conectado como ${login}. Sincronizando…`;
+        const r = await syncNow();
+        toast(r?.pulled ? 'Listo: traje tus listas del otro dispositivo' : 'Sincronización activada', { ic: 'cloud', tone: 'violet' });
+        settingsView(el, ctx);
+      } catch (err) {
+        msg.className = 'form-msg err';
+        msg.textContent = err.message;
+      }
+    };
+  };
+  paintSync();
+  const onSync = () => ctx.alive() && !document.activeElement?.matches?.('#st-gh') && paintSync();
+  bus.addEventListener('sync', onSync);
+  ctx.onCleanup(() => bus.removeEventListener('sync', onSync));
 
   /* Copia de seguridad */
   $('#st-export').onclick = () => {

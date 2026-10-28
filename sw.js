@@ -1,6 +1,6 @@
 // Service worker: permite instalar la app y abrirla rápido.
 // Solo guarda los archivos de la app; los datos (TMDB, noticias) siempre se piden en vivo.
-const VERSION = 'galions-v1';
+const VERSION = 'galions-v2';
 const SHELL = [
   './',
   './index.html',
@@ -13,6 +13,7 @@ const SHELL = [
   './assets/js/icons.js',
   './assets/js/recs.js',
   './assets/js/notify.js',
+  './assets/js/sync.js',
   './assets/js/views/home.js',
   './assets/js/views/explore.js',
   './assets/js/views/search.js',

@@ -27,9 +27,13 @@ Tu bóveda personal de películas, series y anime. Guarda lo que ves, por qué t
 2. Para usarla en el teléfono: **Ajustes → Mostrar código QR** y escanéalo con la cámara. Se abre ya conectada.
 3. Para instalarla: en Android, menú ⋮ → *Instalar app*; en iPhone, Compartir → *Agregar a inicio*.
 
-## Tus datos
+## Sincronizar PC y teléfono
 
-Todo se guarda en el navegador de cada dispositivo. Para pasar tus listas de la PC al teléfono (o tener respaldo) usa **Ajustes → Copia de seguridad**.
+En **Ajustes → Sincronizar PC y teléfono** conectas un token de GitHub con permiso `gist` (el enlace ya viene preparado). Tus listas se guardan en un gist secreto de tu cuenta y cada dispositivo lo lee y lo actualiza solo: al abrir la app, cada 2 minutos y unos segundos después de cada cambio. Si cambias lo mismo en los dos, gana el cambio más reciente.
+
+En el teléfono basta con escanear el **código QR** de Ajustes: lleva la llave de TMDB y el token, así que el teléfono queda conectado y vinculado de una vez.
+
+También puedes descargar una copia en archivo en **Ajustes → Copia de seguridad**.
 
 ## Límites
 

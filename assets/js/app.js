@@ -3,6 +3,7 @@ import { icon, logo } from './icons.js';
 import { settings, library, notifs, meta, bus } from './store.js';
 import { searchMulti, norm, IMG } from './api.js';
 import { checkAll, startFollowing } from './notify.js';
+import { startAutoSync, syncNow, syncEnabled } from './sync.js';
 import {
   $, $$, esc, reg, itemFor, refreshCards, toast, burst, closeModal, openDrawer, closeDrawer, openTrailer,
   updateScrollButtons, debounce, posterHTML, displayTitle, typeLabel, timeAgo, countdown, reduceMotion, enableTilt,
@@ -53,6 +54,7 @@ function renderShell() {
     <div class="topbar-actions">
       <a class="icon-btn only-mobile" href="#/buscar" aria-label="Buscar">${icon('search')}</a>
       <a class="icon-btn only-mobile" href="#/noticias" aria-label="Noticias">${icon('news')}</a>
+      <button class="icon-btn" id="sync-btn" data-act="sync" aria-label="Sincronizar" title="Sincronizado entre tus dispositivos" ${syncEnabled() ? '' : 'hidden'}>${icon('cloud')}<span class="dot" id="sync-dot" hidden>!</span></button>
       <button class="icon-btn" id="bell" data-act="open-notifs" aria-label="Avisos">${icon('bell')}<span class="dot" id="bell-dot" hidden></span></button>
       <a class="icon-btn only-mobile" href="#/ajustes" aria-label="Ajustes">${icon('settings')}</a>
     </div>`;
@@ -244,6 +246,10 @@ function onClick(ev) {
     track.scrollBy({ left: Number(a.dataset.dir) * track.clientWidth * 0.85, behavior: 'smooth' });
   } else if (act === 'trailer') {
     openTrailer(a.dataset.yt, a.dataset.title);
+  } else if (act === 'sync') {
+    syncNow()
+      .then((r) => toast(r?.pulled ? 'Traje los cambios de tu otro dispositivo' : 'Todo sincronizado', { ic: 'cloud', tone: 'violet' }))
+      .catch((e) => toast(e.message, { ic: 'cloudOff', tone: 'err' }));
   } else if (act === 'open-notifs') {
     openNotifs();
   } else if (act === 'notifs-read') {
@@ -481,6 +487,24 @@ function init() {
   addEventListener('scroll', () => $('#topbar').classList.toggle('scrolled', scrollY > 8), { passive: true });
   addEventListener('hashchange', navigate);
   bus.addEventListener('notifs', () => updateBell());
+  bus.addEventListener('settings', () => {
+    const b = $('#sync-btn');
+    if (b) b.hidden = !syncEnabled();
+  });
+  bus.addEventListener('sync', (e) => {
+    const b = $('#sync-btn');
+    if (!b) return;
+    const st = e.detail.state;
+    b.classList.toggle('syncing', st === 'running');
+    $('#sync-dot').hidden = st !== 'error';
+    b.title = st === 'error' ? `No se pudo sincronizar: ${e.detail.error?.message || ''}` : 'Sincronizado entre tus dispositivos';
+    // Si llegaron cambios del otro dispositivo, refresca la pantalla (sin interrumpir si estás escribiendo)
+    if (st === 'ok' && e.detail.pulled) {
+      const { path } = parseHash();
+      const typing = /INPUT|TEXTAREA/.test(document.activeElement?.tagName);
+      if (!typing && !path.startsWith('/titulo') && !path.startsWith('/ajustes') && !path.startsWith('/buscar')) render();
+    }
+  });
   bus.addEventListener('library', () => updateNav(parseHash().path));
   bus.addEventListener('settings', () => updateNav(parseHash().path));
 
@@ -489,6 +513,7 @@ function init() {
 
   render();
   updateBell();
+  startAutoSync();
 
   // Revisar lo que sigues al abrir y cada 30 minutos mientras la app esté abierta
   const check = () => {

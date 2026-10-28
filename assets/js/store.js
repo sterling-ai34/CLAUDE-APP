@@ -7,6 +7,7 @@ const KEYS = {
   library: 'galions.library.v1',
   notifs: 'galions.notifs.v1',
   meta: 'galions.meta.v1',
+  tombs: 'galions.tombs.v1',
 };
 
 function read(k, fallback) {
@@ -37,6 +38,8 @@ const DEFAULT_SETTINGS = {
   disabledFeeds: [],
   customFeeds: [],
   browserNotifs: false,
+  gistToken: '', // token de GitHub para sincronizar entre dispositivos
+  gistId: '',
 };
 let _settings = { ...DEFAULT_SETTINGS, ...read(KEYS.settings, {}) };
 
@@ -64,6 +67,9 @@ export const keyOf = (it) => `${it.type}:${it.id}`;
 const SUMMARY_FIELDS = ['id', 'type', 'title', 'originalTitle', 'poster', 'backdrop', 'year', 'date', 'genres', 'anime', 'runtime', 'vote', 'episodes'];
 
 let _lib = read(KEYS.library, {});
+// "Lápidas": cuándo se borró cada título, para que al sincronizar no reaparezca lo que quitaste.
+let _tombs = read(KEYS.tombs, {});
+const saveTombs = () => write(KEYS.tombs, _tombs);
 
 function blankEntry(it) {
   return {
@@ -100,8 +106,13 @@ export const library = {
     for (const f of SUMMARY_FIELDS) if (item[f] !== undefined && item[f] !== null && item[f] !== '') e[f] = item[f];
     fn(e);
     e.updatedAt = Date.now();
-    if (isEmpty(e)) delete _lib[k];
-    else _lib[k] = e;
+    if (isEmpty(e)) {
+      if (_lib[k]) {
+        _tombs[k] = e.updatedAt;
+        saveTombs();
+      }
+      delete _lib[k];
+    } else _lib[k] = e;
     write(KEYS.library, _lib);
     emit('library', { key: k, entry: _lib[k] || null });
     return _lib[k] || null;
@@ -180,9 +191,50 @@ export const library = {
     emit('library', { all: true });
   },
   clear() {
+    const now = Date.now();
+    for (const k of Object.keys(_lib)) _tombs[k] = now;
+    saveTombs();
     _lib = {};
     write(KEYS.library, _lib);
     emit('library', { all: true });
+  },
+
+  /** Datos para guardar en la nube. */
+  syncPayload() {
+    return { app: 'cine-galions', version: 2, savedAt: Date.now(), library: _lib, tombs: _tombs };
+  },
+
+  /**
+   * Junta lo que hay en la nube con lo de este dispositivo.
+   * Por cada título gana el cambio más reciente (incluido un borrado).
+   * Devuelve { changedLocal, changedRemote }.
+   */
+  mergeRemote(remote) {
+    const rl = remote?.library || {};
+    const rt = remote?.tombs || {};
+    const keys = new Set([...Object.keys(_lib), ...Object.keys(rl), ...Object.keys(_tombs), ...Object.keys(rt)]);
+    const lib = {};
+    const tombs = {};
+    const old = Date.now() - 120 * 864e5;
+    for (const k of keys) {
+      const a = _lib[k];
+      const b = rl[k];
+      const best = !a ? b : !b ? a : (b.updatedAt || 0) > (a.updatedAt || 0) ? b : a;
+      const t = Math.max(_tombs[k] || 0, rt[k] || 0);
+      if (best && (best.updatedAt || 0) > t) lib[k] = best;
+      else if (t && t > old) tombs[k] = t;
+    }
+    const sig = (L, T) => JSON.stringify([Object.keys(L).sort().map((k) => [k, L[k].updatedAt || 0]), Object.keys(T).sort().map((k) => [k, T[k]])]);
+    const changedLocal = sig(lib, tombs) !== sig(_lib, _tombs);
+    const changedRemote = sig(lib, tombs) !== sig(rl, rt);
+    if (changedLocal) {
+      _lib = lib;
+      _tombs = tombs;
+      write(KEYS.library, _lib);
+      saveTombs();
+      emit('library', { all: true, fromSync: true });
+    }
+    return { changedLocal, changedRemote };
   },
 };
 

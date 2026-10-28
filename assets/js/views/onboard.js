@@ -1,6 +1,7 @@
 import { icon, logo } from '../icons.js';
 import { validateKey } from '../api.js';
 import { settings } from '../store.js';
+import { checkToken, syncNow } from '../sync.js';
 import { esc } from '../ui.js';
 
 export default function onboard(el) {
@@ -57,10 +58,21 @@ export async function connect(el, ctx) {
   try {
     await validateKey(k);
     settings.set({ tmdbKey: k });
-    // quita la llave de la barra de direcciones
+    const g = (ctx.query.get('g') || '').trim();
+    // quita las llaves de la barra de direcciones
     history.replaceState(null, '', location.pathname + '#/');
-    msg.textContent = '¡Conectado! Ya puedes usar la app en este dispositivo.';
-    setTimeout(() => dispatchEvent(new HashChangeEvent('hashchange')), 700);
+    if (g) {
+      msg.textContent = 'Vinculando tus listas…';
+      try {
+        await checkToken(g);
+        settings.set({ gistToken: g, gistId: '' });
+        await syncNow();
+        msg.textContent = '¡Conectado y vinculado! Tus listas ya están aquí.';
+      } catch (err) {
+        msg.textContent = `Conectado, pero no pude vincular tus listas: ${err.message}. Puedes hacerlo en Ajustes.`;
+      }
+    } else msg.textContent = '¡Conectado! Ya puedes usar la app en este dispositivo.';
+    setTimeout(() => dispatchEvent(new HashChangeEvent('hashchange')), 1200);
   } catch (err) {
     msg.textContent = err.code === 'BAD_KEY' ? 'La llave del enlace no es válida.' : `No pude conectar con TMDB: ${err.message}`;
   }
